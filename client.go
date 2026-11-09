@@ -562,33 +562,6 @@ func (c *Client) UpdateWeChatKFCallbackToken(openKfID, callbackToken string, tok
 	return nil
 }
 
-// GetConfigItems retrieves all configuration items for the given component type from the bus.
-func (c *Client) GetConfigItems(componentType string) ([]ConfigItem, error) {
-	msg, err := NewMessage(TypeGetConfigItems, GetConfigItemsRequest{
-		ComponentType: componentType,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.Send(msg)
-	if err != nil {
-		return nil, err
-	}
-	if resp == nil {
-		return nil, fmt.Errorf("no response")
-	}
-	if resp.Type == TypeError {
-		return nil, fmt.Errorf("get config items: %s", resp.Error)
-	}
-
-	var result GetConfigItemsResponse
-	if err := resp.DecodePayload(&result); err != nil {
-		return nil, err
-	}
-	return result.Items, nil
-}
-
 // GetCapabilities fetches the capability catalog (builtin tools, MCP servers,
 // skills) scoped to the given agent, including its attachments. The agent
 // receives unmasked credentials (it must execute the servers).
@@ -768,30 +741,6 @@ func (c *Client) AckSkill(userID, skillID string, version int) error {
 	}
 	if resp.Type == TypeError {
 		return fmt.Errorf("ack skill: %s", resp.Error)
-	}
-	return nil
-}
-
-// SetConfigItem updates a single configuration item on the bus.
-func (c *Client) SetConfigItem(componentType, key, value string) error {
-	msg, err := NewMessage(TypeSetConfigItem, SetConfigItemRequest{
-		ComponentType: componentType,
-		Key:           key,
-		Value:         value,
-	})
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.Send(msg)
-	if err != nil {
-		return err
-	}
-	if resp == nil {
-		return fmt.Errorf("no response")
-	}
-	if resp.Type == TypeError {
-		return fmt.Errorf("set config item: %s", resp.Error)
 	}
 	return nil
 }

@@ -121,11 +121,9 @@ const (
 	TypeUpdateWeChatKFCursor      = "update_wechatkf_cursor"
 	TypeUpdateWeChatKFCallbackTok = "update_wechatkf_callback_token"
 
-	// Configuration management (Any component → Bus)
-	TypeGetConfigItems = "get_config_items"
-	TypeConfigItems    = "config_items"
-	TypeSetConfigItem  = "set_config_item"
-	TypeConfigItemSet  = "config_item_set"
+	// Configuration is not here: it belongs to the admin module, which serves it
+	// over HTTP. The bus routes messages only, so a component that needs its
+	// configuration asks admin directly.
 
 	// Agent capabilities (Nanosec → Bus): catalog fetch + builtin sync
 	TypeGetCapabilities  = "get_capabilities"
@@ -385,31 +383,6 @@ type ConfigItem struct {
 	Value       string `json:"value"`
 	ValueType   string `json:"value_type"` // "string", "int", "bool", "duration", "secret"
 	Description string `json:"description"`
-}
-
-// GetConfigItemsRequest is sent by a component to retrieve its configuration items from the bus.
-type GetConfigItemsRequest struct {
-	ComponentType string `json:"component_type"` // "bus", "gateway", "runner", "agent"
-}
-
-// GetConfigItemsResponse is the bus reply with the component's configuration items.
-type GetConfigItemsResponse struct {
-	ComponentType string       `json:"component_type"`
-	Items         []ConfigItem `json:"items"`
-}
-
-// SetConfigItemRequest is sent to update a single configuration item.
-type SetConfigItemRequest struct {
-	ComponentType string `json:"component_type"`
-	Key           string `json:"key"`
-	Value         string `json:"value"`
-}
-
-// SetConfigItemResponse confirms the updated configuration item.
-type SetConfigItemResponse struct {
-	ComponentType string `json:"component_type"`
-	Key           string `json:"key"`
-	Value         string `json:"value"`
 }
 
 // RegisterRunnerRequest is sent by a runner to register itself with the bus.
