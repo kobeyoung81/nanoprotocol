@@ -46,18 +46,9 @@ const (
 	TypeRegisterAccount   = "register_account"
 	TypeAccountRegistered = "account_registered"
 
-	// Agent management (Portal <-> Bus)
-	TypeCreateAgent  = "create_agent"
-	TypeAgentCreated = "agent_created"
-	TypeListAgents   = "list_agents"
-	TypeAgentsListed = "agents_listed"
-	TypeUpdateAgent  = "update_agent"
-	TypeAgentUpdated = "agent_updated"
-	TypeDeleteAgent  = "delete_agent"
-	TypeAgentDeleted = "agent_deleted"
-
-	// Agent runtime status (Hypervisor <-> Bus)
-	TypeUpdateAgentStatus = "update_agent_status"
+	// Agent management lives at the portal as HTTP: no message type remains.
+	// The change notification below survives, because the supervisors subscribe
+	// to it through the bus's SSE stream.
 
 	// Agent change notification (Bus -> Hypervisor, SSE event type)
 	TypeAgentsChanged = "agents_changed"
@@ -94,17 +85,8 @@ const (
 	TypeTunnelStreamOutput = "tunnel_stream_output"
 	TypeTunnelStreamClosed = "tunnel_stream_closed"
 
-	// Session access (for web portal)
-	TypeListSessions   = "list_sessions"
-	TypeSessionsListed = "sessions_listed"
-	TypeGetSession     = "get_session"
-	TypeSession        = "session"
-
-	// Session persistence (Nanosec → Bus → MySQL)
-	TypeSaveSession     = "save_session"
-	TypeSessionSaved    = "session_saved"
-	TypeArchiveSession  = "archive_session"
-	TypeSessionArchived = "session_archived"
+	// Session persistence is an HTTP call to the portal now; the body is
+	// SaveSessionRequest below and no message type survives.
 
 	// Audit
 	TypeGetAuditLog = "get_audit_log"
@@ -474,54 +456,6 @@ type AgentInfo struct {
 	Tools         []string          `json:"tools"`
 	Workspaces    []string          `json:"workspaces"`
 	CreatedAt     string            `json:"created_at"`
-}
-
-type ListAgentsRequest struct {
-	UserID string `json:"user_id"`
-}
-
-type ListAgentsResponse struct {
-	Agents []AgentInfo `json:"agents"`
-}
-
-type UpdateAgentRequest struct {
-	ID           string  `json:"id"`
-	TypeID       *string `json:"type_id,omitempty"`
-	DefaultAgent *string `json:"default_agent,omitempty"`
-	DisplayName  *string `json:"display_name,omitempty"`
-	Description  *string `json:"description,omitempty"`
-	// GroupID moves the agent to another group when non-nil; an empty string
-	// takes it out of every group (ungrouped). Absent leaves the grouping alone.
-	GroupID        *string          `json:"group_id,omitempty"`
-	SystemPrompt   *string          `json:"system_prompt,omitempty"`
-	Model          *string          `json:"model,omitempty"`
-	ModelID        *int64           `json:"model_id,omitempty"`
-	Thinking       *string          `json:"thinking,omitempty"`
-	McpEnabled     *bool            `json:"mcp_enabled,omitempty"`
-	TitleModel     *string          `json:"title_model,omitempty"`
-	SummarizeModel *string          `json:"summarize_model,omitempty"`
-	SubagentModel  *string          `json:"subagent_model,omitempty"`
-	Permissions    []PermissionRule `json:"permissions,omitempty"`
-	// Settings replaces this agent's runtime override map when present (an
-	// empty object clears all overrides). Absent leaves overrides unchanged.
-	Settings     *map[string]string `json:"settings,omitempty"`
-	ClearModelID bool               `json:"clear_model_id,omitempty"` // explicit reset to "no catalog model"
-}
-
-type DeleteAgentRequest struct {
-	ID string `json:"id"`
-}
-
-type DeleteAgentResponse struct {
-	ID string `json:"id"`
-}
-
-// UpdateAgentStatusRequest reports an agent's runtime status to the bus.
-// Status is one of: spawning, running, failed, stopped.
-type UpdateAgentStatusRequest struct {
-	UserID  string `json:"user_id"`
-	AgentID string `json:"agent_id"`
-	Status  string `json:"status"`
 }
 
 // AgentChangeNotification is broadcast by the bus (SSE) when an agent is
@@ -1122,27 +1056,6 @@ type SessionMeta struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-type ListSessionsRequest struct {
-	AgentID string `json:"agent_id"`
-	Limit   int    `json:"limit,omitempty"`
-	Offset  int    `json:"offset,omitempty"`
-}
-
-type ListSessionsResponse struct {
-	Sessions []SessionMeta `json:"sessions"`
-}
-
-type GetSessionRequest struct {
-	SessionID string `json:"session_id"`
-}
-
-type GetSessionResponse struct {
-	SessionID string `json:"session_id"`
-	AgentID   string `json:"agent_id"`
-	Messages  string `json:"messages"`
-	Summary   string `json:"summary"`
-}
-
 type SaveSessionRequest struct {
 	SessionID   string `json:"session_id"`
 	AgentID     string `json:"agent_id"`
@@ -1173,17 +1086,10 @@ type SaveSessionRequest struct {
 	FromIndex int `json:"from_index,omitempty"`
 }
 
-// ErrSessionResync is returned by Client.SaveSession when the bus asked for a
-// full snapshot instead of applying a delta.
-var ErrSessionResync = errors.New("bus asked for a full session snapshot")
-
-// SaveSessionResponse answers a save. Resync says the receiver could not apply a
-// delta — the index it holds does not match FromIndex — so the sender must send
-// the whole array next time.
-type SaveSessionResponse struct {
-	SessionID string `json:"session_id"`
-	Resync    bool   `json:"resync,omitempty"`
-}
+// ErrSessionResync reports that the receiver of a delta does not hold the prefix
+// it claims, so the sender must send the whole conversation instead. The portal
+// answers 409 for it; the runtime maps that onto this error.
+var ErrSessionResync = errors.New("the store asked for a full session snapshot")
 
 // ======== Audit Types ========
 

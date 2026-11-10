@@ -2,7 +2,6 @@ package nanoprotocol
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 )
@@ -372,33 +371,10 @@ func TestTypeConstants(t *testing.T) {
 	}
 }
 
-// TestAgentGroupFields_MarshalRoundTrip pins the three shapes the grouping
-// field has to survive on the wire: a create carries it when set and omits it
-// when empty; a listing echoes it; an update distinguishes "absent" (leave the
-// grouping alone) from an empty string (move to ungrouped).
-func TestAgentGroupFields_MarshalRoundTrip(t *testing.T) {
-	t.Run("create request", func(t *testing.T) {
-		body, err := json.Marshal(CreateAgentRequest{UserID: "u1", ID: "a1", DisplayName: "A", GroupID: "g1"})
-		if err != nil {
-			t.Fatalf("Marshal() error = %v", err)
-		}
-		var decoded CreateAgentRequest
-		if err := json.Unmarshal(body, &decoded); err != nil {
-			t.Fatalf("Unmarshal() error = %v", err)
-		}
-		if decoded.GroupID != "g1" {
-			t.Errorf("GroupID = %q, want %q", decoded.GroupID, "g1")
-		}
-
-		empty, err := json.Marshal(CreateAgentRequest{UserID: "u1", ID: "a1", DisplayName: "A"})
-		if err != nil {
-			t.Fatalf("Marshal() error = %v", err)
-		}
-		if strings.Contains(string(empty), "group_id") {
-			t.Errorf("empty GroupID must be omitted, got %s", empty)
-		}
-	})
-
+// TestAgentGroupField_MarshalRoundTrip pins the one shape still on this
+// protocol: the listing's GroupID. The create/update request shapes moved to the
+// portal with the agent rows (they are HTTP bodies there, not messages).
+func TestAgentGroupField_MarshalRoundTrip(t *testing.T) {
 	t.Run("agent info", func(t *testing.T) {
 		body, err := json.Marshal(AgentInfo{ID: "a1", GroupID: "g1"})
 		if err != nil {
@@ -410,31 +386,6 @@ func TestAgentGroupFields_MarshalRoundTrip(t *testing.T) {
 		}
 		if decoded.GroupID != "g1" {
 			t.Errorf("GroupID = %q, want %q", decoded.GroupID, "g1")
-		}
-	})
-
-	t.Run("update request", func(t *testing.T) {
-		var absent UpdateAgentRequest
-		if err := json.Unmarshal([]byte(`{"id":"a1"}`), &absent); err != nil {
-			t.Fatalf("Unmarshal() error = %v", err)
-		}
-		if absent.GroupID != nil {
-			t.Errorf("absent group_id must decode to nil, got %q", *absent.GroupID)
-		}
-
-		var cleared UpdateAgentRequest
-		if err := json.Unmarshal([]byte(`{"id":"a1","group_id":""}`), &cleared); err != nil {
-			t.Fatalf("Unmarshal() error = %v", err)
-		}
-		if cleared.GroupID == nil || *cleared.GroupID != "" {
-			t.Fatalf("cleared group_id must decode to a pointer to the empty string, got %v", cleared.GroupID)
-		}
-		body, err := json.Marshal(cleared)
-		if err != nil {
-			t.Fatalf("Marshal() error = %v", err)
-		}
-		if !strings.Contains(string(body), `"group_id":""`) {
-			t.Errorf("cleared group_id must be marshaled, got %s", body)
 		}
 	})
 }
