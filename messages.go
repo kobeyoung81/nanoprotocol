@@ -139,12 +139,8 @@ const (
 	TypeSkillAck     = "skill_ack"
 	TypeSkillAcked   = "skill_acked"
 
-	// Binding agent preferences (Gateway/Portal → Bus): which agent a channel
-	// binding (channel + sender) talks to by default.
-	TypeGetBindingAgent = "get_binding_agent"
-	TypeBindingAgent    = "binding_agent"
-	TypeSetBindingAgent = "set_binding_agent"
-	TypeBindingAgentSet = "binding_agent_set"
+	// A channel binding's default agent is an HTTP read at the portal now: it
+	// owns the agents and the preference.
 
 	// Runner registry (Runner → Bus)
 	TypeRegisterRunner   = "register_runner"
@@ -1016,32 +1012,6 @@ type AgentRecord struct {
 type ConfigChange struct {
 	AgentID string   `json:"agent_id"`
 	Keys    []string `json:"keys"`
-}
-
-// ======== Binding Agent Preferences ========
-
-// GetBindingAgentRequest asks the bus which agent a channel binding talks to by
-// default (explicit binding_agent_preferences entry, falling back to the user's
-// first active agent).
-type GetBindingAgentRequest struct {
-	BindingID int64 `json:"binding_id"`
-}
-
-// GetBindingAgentResponse is the resolved default agent for a binding.
-type GetBindingAgentResponse struct {
-	AgentID string `json:"agent_id"`
-}
-
-// SetBindingAgentRequest assigns the default agent for a channel binding.
-type SetBindingAgentRequest struct {
-	BindingID int64  `json:"binding_id"`
-	AgentID   string `json:"agent_id"`
-}
-
-// SetBindingAgentResponse confirms the assignment.
-type SetBindingAgentResponse struct {
-	BindingID int64  `json:"binding_id"`
-	AgentID   string `json:"agent_id"`
 }
 
 // ======== Session Types ========
