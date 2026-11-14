@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -44,12 +46,28 @@ func WithHTTPClient(httpClient *http.Client) Option {
 	}
 }
 
-// Client is an HTTP client for communicating with the bus service.
-// The bus exposes the nanoprotocol message envelope over POST /api/v1/rpc.
+// Client is a client for communicating with the bus service.
+//
+// Requests go over POST /api/v1/rpc, unless the client was opened with DialWS:
+// then the same envelope travels on one WebSocket (see wsclient.go) and the
+// notification streams arrive as pushes on it.
 type Client struct {
 	baseURL string
 	token   string
 	http    *http.Client
+
+	// The agent socket. The connection itself is replaced on reconnect, so it
+	// sits behind a lock while the channels and the request lock outlive it.
+	wsStateMu       sync.RWMutex
+	wsConn          *agentSocketConn
+	wsReady         atomic.Bool
+	wsWriteMu       sync.Mutex
+	wsReqMu         sync.Mutex
+	wsRegister      *AgentSocketRegister
+	wsSuperviseOnce sync.Once
+	configCh        chan ConfigChange
+	agentsCh        chan AgentChangeNotification
+	inboundReady    chan struct{}
 }
 
 // NewClient creates a client connected to the given bus URL.
@@ -96,6 +114,7 @@ func normalizeBaseURL(rawURL string) string {
 // Close releases the client's idle connections. Provided for interface parity
 // with the legacy WebSocket client.
 func (c *Client) Close() error {
+	c.closeSocket()
 	if c.http != nil {
 		c.http.CloseIdleConnections()
 	}
@@ -105,6 +124,14 @@ func (c *Client) Close() error {
 // Send sends a message to the bus and waits for a response.
 // A nil response is returned when the bus replies 204 (no payload).
 func (c *Client) Send(msg Message) (*Message, error) {
+	if c.wsReady.Load() {
+		return c.wsSend(msg)
+	}
+	return c.sendHTTP(msg)
+}
+
+// sendHTTP is the request path the bus has always served: one POST per message.
+func (c *Client) sendHTTP(msg Message) (*Message, error) {
 	body, err := json.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -899,6 +926,9 @@ func (c *Client) SetAgentConfig(agentID, key, value string) error {
 // ConfigChanges returns a channel of configuration change notifications.
 // It subscribes to the bus SSE events stream and reconnects automatically.
 func (c *Client) ConfigChanges() <-chan ConfigChange {
+	if c.inboundReady != nil {
+		return c.configCh
+	}
 	ch := make(chan ConfigChange, 16)
 	go c.streamConfigChanges(ch)
 	return ch
@@ -947,6 +977,9 @@ func (c *Client) streamConfigChanges(out chan<- ConfigChange) {
 // delete). It subscribes to the bus SSE events stream and reconnects
 // automatically.
 func (c *Client) AgentChanges() <-chan AgentChangeNotification {
+	if c.inboundReady != nil {
+		return c.agentsCh
+	}
 	ch := make(chan AgentChangeNotification, 16)
 	go c.streamAgentChanges(ch)
 	return ch

@@ -70,6 +70,15 @@ const (
 	TypeOutboundChunk    = "outbound_chunk"
 	TypeOutboundComplete = "outbound_complete"
 
+	// Agent socket (Agent <-> Bus via WS). One connection per agent process
+	// carries the same request/response messages as POST /api/v1/rpc, plus the
+	// two pushes below. The pushes never carry state: an inbound notice only
+	// says "ask again", a platform event only says "re-read".
+	TypeAgentSocketRegister   = "agent_socket_register"
+	TypeAgentSocketRegistered = "agent_socket_registered"
+	TypeInboundReady          = "inbound_ready"
+	TypePlatformEvent         = "platform_event"
+
 	// Hypervisor tunnel (Hypervisor <-> Bus via WS)
 	TypeTunnelRegister   = "tunnel_register"
 	TypeTunnelRegistered = "tunnel_registered"
@@ -460,6 +469,39 @@ type AgentChangeNotification struct {
 	UserID  string `json:"user_id"`
 	Action  string `json:"action"` // create | update | delete
 	AgentID string `json:"agent_id"`
+}
+
+// AgentSocketRegister is the first frame on /ws/agent.
+//
+// UserID is required. AgentID empty means "every agent of this user", which is
+// what the container's hypervisor wants: it supervises all of them. Components
+// selects the notifications the connection wants; empty means both.
+type AgentSocketRegister struct {
+	UserID     string   `json:"user_id"`
+	AgentID    string   `json:"agent_id,omitempty"`
+	Components []string `json:"components,omitempty"`
+}
+
+// Component names accepted by AgentSocketRegister.Components.
+const (
+	SocketComponentConfig = "config" // config_changed
+	SocketComponentAgents = "agents" // agents_changed
+)
+
+// InboundReady tells the agent a message is waiting for it. It carries no
+// content: the agent claims the message with poll_inbound, which is what makes
+// the claim atomic, so a duplicated or lost push is harmless.
+type InboundReady struct {
+	Count int `json:"count,omitempty"`
+}
+
+// PlatformEventNotice forwards one bus_platform_events record over the agent
+// socket, so an agent no longer needs its own SSE subscription. Type is the
+// SSE event name the client already knows (config_changed, agents_changed, …)
+// and Content is that event's JSON payload.
+type PlatformEventNotice struct {
+	Type    string `json:"type"`
+	Content string `json:"content"`
 }
 
 // ======== User Management Types ========
