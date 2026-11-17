@@ -389,3 +389,65 @@ func TestAgentGroupField_MarshalRoundTrip(t *testing.T) {
 		}
 	})
 }
+
+// TestTunnelChunkFitsOneFrame pins the framing invariant: one chunk, base64'd
+// into JSON, stays far below a megabyte so a relay's read limit can protect the
+// connection without capping the file size.
+func TestTunnelChunkFitsOneFrame(t *testing.T) {
+	chunk := TunnelBodyChunk{RequestID: "req-1", Seq: 7, Data: make([]byte, TunnelChunkBytes)}
+	msg, err := NewMessage(TypeTunnelResponseBody, chunk)
+	if err != nil {
+		t.Fatalf("NewMessage: %v", err)
+	}
+	encoded, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if len(encoded) > 512<<10 {
+		t.Fatalf("one chunk frame is %d bytes, want <= 512 KiB", len(encoded))
+	}
+	if len(encoded) <= TunnelChunkBytes {
+		t.Fatalf("base64 did not expand the chunk: %d bytes", len(encoded))
+	}
+}
+
+func TestTunnelStreamTypesRoundTrip(t *testing.T) {
+	register, err := NewMessage(TypeTunnelRegister, TunnelRegister{
+		UserID: "u1", Features: []string{TunnelFeatureBodyStream},
+	})
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	var got TunnelRegister
+	if err := register.DecodePayload(&got); err != nil {
+		t.Fatalf("decode register: %v", err)
+	}
+	if len(got.Features) != 1 || got.Features[0] != TunnelFeatureBodyStream {
+		t.Fatalf("features = %v", got.Features)
+	}
+
+	resp := TunnelResponse{RequestID: "r1", Status: 200, Streamed: true, BodyLength: 5 << 20}
+	msg, err := NewMessage(TypeTunnelResponse, resp)
+	if err != nil {
+		t.Fatalf("response: %v", err)
+	}
+	var decoded TunnelResponse
+	if err := msg.DecodePayload(&decoded); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !decoded.Streamed || decoded.BodyLength != 5<<20 {
+		t.Fatalf("decoded = %+v", decoded)
+	}
+
+	cancel, err := NewMessage(TypeTunnelCancel, TunnelCancel{RequestID: "r1"})
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	var cancelled TunnelCancel
+	if err := cancel.DecodePayload(&cancelled); err != nil {
+		t.Fatalf("decode cancel: %v", err)
+	}
+	if cancelled.RequestID != "r1" {
+		t.Fatalf("cancel = %+v", cancelled)
+	}
+}

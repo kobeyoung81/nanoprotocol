@@ -85,6 +85,14 @@ const (
 	TypeTunnelRequest    = "tunnel_request"
 	TypeTunnelResponse   = "tunnel_response"
 
+	// Bodies larger than TunnelInlineBodyBytes travel as a sequence of
+	// TunnelBodyChunk frames after the request/response header frame, so a file
+	// is never held whole in one WebSocket message. TunnelCancel aborts one
+	// request from either end (a browser stopped reading, a container gave up).
+	TypeTunnelRequestBody  = "tunnel_request_body"
+	TypeTunnelResponseBody = "tunnel_response_body"
+	TypeTunnelCancel       = "tunnel_cancel"
+
 	// Hypervisor tunnel terminal streams (Byte-channel + control over the
 	// single per-user hypervisor WebSocket; Browser <-> Bus <-> Hypervisor)
 	TypeTunnelStreamOpen   = "tunnel_stream_open"
@@ -966,9 +974,36 @@ type OutboundComplete struct {
 
 // ======== Hypervisor Tunnel Types ========
 
+// Tunnel body framing. A request or response whose body is at most
+// TunnelInlineBodyBytes rides inside the header frame (one JSON message). Above
+// that the body is split into TunnelChunkBytes blocks carried by
+// TunnelBodyChunk frames: base64 costs a third more bytes and a single frame
+// holds the whole body in memory at both ends, which is exactly what broke
+// downloads of a few megabytes.
+const (
+	// TunnelFeatureBodyStream is advertised by a container that understands the
+	// chunked frames. A caller must not send them to a container that did not
+	// advertise it: an old hypervisor would ignore the chunks and answer the
+	// request with an empty body.
+	TunnelFeatureBodyStream = "body-stream"
+	// TunnelInlineBodyBytes is the cut-off between the one-message body and the
+	// chunked one. Small requests stay on the old path, so the common case is
+	// unchanged and a mixed-version rollout keeps working.
+	TunnelInlineBodyBytes = 256 << 10
+	// TunnelChunkBytes is one chunk's payload. 256 KiB base64s to 341 KiB, well
+	// inside a frame, and keeps the buffer per stream at a predictable size.
+	TunnelChunkBytes = 256 << 10
+	// TunnelStreamBufferChunks bounds the chunks a relay buffers for one request
+	// before it decides the other end stopped reading.
+	TunnelStreamBufferChunks = 4
+)
+
 type TunnelRegister struct {
 	AgentID string `json:"agent_id"`
 	UserID  string `json:"user_id"`
+	// Features names the optional protocol extensions this container speaks.
+	// Empty means the pre-streaming hypervisor.
+	Features []string `json:"features,omitempty"`
 }
 
 type TunnelRegistered struct {
@@ -981,6 +1016,10 @@ type TunnelRequest struct {
 	Path      string              `json:"path"`
 	Headers   map[string][]string `json:"headers"`
 	Body      []byte              `json:"body,omitempty"`
+	// Streamed says Body is empty on purpose and arrives as TunnelBodyChunk
+	// frames. BodyLength is the known size, or -1 when the sender does not know.
+	Streamed   bool  `json:"streamed,omitempty"`
+	BodyLength int64 `json:"body_length,omitempty"`
 }
 
 type TunnelResponse struct {
@@ -988,6 +1027,26 @@ type TunnelResponse struct {
 	Status    int                 `json:"status"`
 	Headers   map[string][]string `json:"headers"`
 	Body      []byte              `json:"body"`
+	// Streamed says the body follows as TunnelBodyChunk frames.
+	Streamed   bool  `json:"streamed,omitempty"`
+	BodyLength int64 `json:"body_length,omitempty"`
+}
+
+// TunnelBodyChunk carries one block of a streamed request or response body.
+// Seq starts at zero and rises by one per chunk; Final marks the last block.
+// Error terminates the stream early with a reason the other end can report.
+type TunnelBodyChunk struct {
+	RequestID string `json:"request_id"`
+	Seq       int    `json:"seq"`
+	Data      []byte `json:"data,omitempty"`
+	Final     bool   `json:"final,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// TunnelCancel aborts one in-flight request. The receiver drops the stream and
+// cancels the local HTTP request, which stops a file read nobody is waiting for.
+type TunnelCancel struct {
+	RequestID string `json:"request_id"`
 }
 
 // TunnelStreamOpen asks the hypervisor to spawn (or attach to) a terminal
